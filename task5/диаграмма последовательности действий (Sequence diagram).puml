@@ -1,0 +1,46 @@
+@startuml
+  title Чтение списка заказов и обновление статуса заказа (с кешированием, Cache-Aside)
+  
+  actor Operator
+  participant "MES UI" as UI
+  participant "MES API" as API
+  participant "Cache (Redis)" as CACHE
+  participant "MES DB" as DB
+
+
+Operator -> UI: Открывает страницу заказов
+UI -> API: GET /orders
+
+API -> CACHE: Проверить ключ "orders:list"
+  alt Кеш заполнен (cache hit)
+CACHE --> API: Список заказов из кеша
+API --> UI: JSON список заказов
+UI --> Operator: Показывает список заказов
+  else Кеш пуст (cache miss)
+CACHE --> API: Ключ не найден
+API -> DB: SELECT * FROM orders
+DB --> API: Результат выборки
+API -> CACHE: SET "orders:list" (TTL = 60 сек)
+API --> UI: JSON список заказов
+UI --> Operator: Показывает список заказов
+  end
+  
+  == Обновление статуса заказа ==
+
+Operator -> UI: Изменить статус заказа
+UI -> API: PUT /orders/{id}/status (newStatus)
+
+API -> DB: UPDATE orders SET status=newStatus WHERE id=...
+DB --> API: OK
+
+API -> CACHE: DELETE "orders:list"  (инвалидация кеша)
+  note right of CACHE
+Причина:
+  Список заказов изменился,
+  и кеш должен быть сброшен.
+  end note
+
+API --> UI: OK
+UI --> Operator: Статус обновлён
+  
+  @enduml
